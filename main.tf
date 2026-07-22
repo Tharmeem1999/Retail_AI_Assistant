@@ -19,9 +19,11 @@ module "s3_bucket" {
 module "s3_bucket_object" {
   source = "./modules/s3_bucket_object"
 
-  bucket_name = "${var.chatbot_name}-files"
-  bucket_key = "product_inventory.csv"
+  bucket_name   = "${var.chatbot_name}-files"
+  bucket_key    = "product_inventory.csv"
   bucket_source = "${path.module}/product_inventory.csv"
+
+  depends_on = [module.s3_bucket]
 }
 
 
