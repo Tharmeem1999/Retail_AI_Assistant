@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ShopAI — Category</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<nav>
+  <a href="index.html">🛍️ ShopAI</a>
+  <button class="back-btn" onclick="history.back()">← Back</button>
+</nav>
+
+<div class="hero">
+  <h1 id="cat-title"></h1>
+  <p id="cat-subtitle"></p>
+</div>
+
+<div class="grid" id="product-grid"></div>
+
+<!-- Chatbot widget -->
+<button id="chat-toggle" title="Chat with AI">💬</button>
+<div id="chat-window" class="hidden">
+  <div id="chat-header">
+    <span>🤖 ShopAI Assistant</span>
+    <button id="chat-close">✕</button>
+  </div>
+  <div id="chat-messages"></div>
+  <div id="chat-input-row">
+    <input id="chat-input" type="text" placeholder="Ask about products…" />
+    <button id="chat-send">Send</button>
+  </div>
+</div>
+
+<script src="products.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const cat    = params.get("cat") || "";
+
+  document.getElementById("cat-title").textContent =
+    (categoryIcons[cat] || "📦") + "  " + cat;
+
+  const filtered = products.filter(p => p.category === cat);
+  document.getElementById("cat-subtitle").textContent =
+    filtered.length + " product" + (filtered.length !== 1 ? "s" : "") + " found";
+
+  function badgeClass(avail) {
+    if (avail === "In Stock")      return "in";
+    if (avail === "Out of Stock")  return "out";
+    return "limit";
+  }
+
+  const grid = document.getElementById("product-grid");
+
+  if (filtered.length === 0) {
+    grid.innerHTML = "<p style='padding:2rem;color:#888'>No products found in this category.</p>";
+  } else {
+    filtered.forEach(p => {
+      const card = document.createElement("div");
+      card.className = "product-card";
+      card.innerHTML = `
+        <h3>${p.name}</h3>
+        <div class="brand">${p.brand} &nbsp;·&nbsp; ID: ${p.id}</div>
+        <div class="price">$${p.price.toFixed(2)}</div>
+        <span class="badge ${badgeClass(p.availability)}">${p.availability}</span>
+        <div class="features">✨ ${p.features}</div>
+        <div class="desc">${p.description}</div>
+        <div class="stock">📦 Stock: ${p.stock} unit${p.stock !== 1 ? "s" : ""}</div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+</script>
+<script src="chatbot.js"></script>
+</body>
+</html>

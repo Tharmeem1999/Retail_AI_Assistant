@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ShopAI — Browse Categories</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<nav>
+  <a href="index.html">🛍️ ShopAI</a>
+</nav>
+
+<div class="hero">
+  <h1>Welcome to ShopAI</h1>
+  <p>Browse our product categories below or ask the chatbot anything.</p>
+</div>
+
+<div class="grid" id="category-grid"></div>
+
+<!-- Chatbot widget -->
+<button id="chat-toggle" title="Chat with AI">💬</button>
+<div id="chat-window" class="hidden">
+  <div id="chat-header">
+    <span>🤖 ShopAI Assistant</span>
+    <button id="chat-close">✕</button>
+  </div>
+  <div id="chat-messages"></div>
+  <div id="chat-input-row">
+    <input id="chat-input" type="text" placeholder="Ask about products…" />
+    <button id="chat-send">Send</button>
+  </div>
+</div>
+
+<script src="products.js"></script>
+<script>
+  // Build category → product count map
+  const catMap = {};
+  products.forEach(p => {
+    catMap[p.category] = (catMap[p.category] || 0) + 1;
+  });
+
+  const grid = document.getElementById("category-grid");
+  Object.entries(catMap).forEach(([cat, count]) => {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="icon">${categoryIcons[cat] || "📦"}</div>
+      <h3>${cat}</h3>
+      <div class="count">${count} product${count > 1 ? "s" : ""}</div>
+    `;
+    card.addEventListener("click", () => {
+      location.href = `category.html?cat=${encodeURIComponent(cat)}`;
+    });
+    grid.appendChild(card);
+  });
+</script>
+<script src="chatbot.js"></script>
+</body>
+</html>

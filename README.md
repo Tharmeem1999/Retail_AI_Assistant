@@ -1,20 +1,25 @@
 # Serverless Retail AI Assistant on AWS Bedrock
 
-A fully serverless, Infrastructure-as-Code chatbot that answers product-availability and catalog questions using an **Amazon Bedrock Agent** powered by **Amazon Nova Pro**, with an **OpenSearch Serverless** vector store as a Retrieval-Augmented Generation (RAG) knowledge base. The product catalog is uploaded to **S3** and synced into the knowledge base automatically.
+A fully serverless, Infrastructure-as-Code retail website with an embedded AI chatbot. Product catalog questions are answered by an **Amazon Bedrock Agent** powered by **Amazon Nova Pro**, backed by an **OpenSearch Serverless** vector store as a RAG knowledge base. The frontend is a static website served locally, and the chatbot communicates with the agent through a **Lambda + API Gateway** backend — all provisioned with Terraform.
 
 ---
 
 ## Overview
 
-This project deploys an AI shop-assistant chatbot from scratch using Terraform. The agent is grounded in a real CSV inventory (`product_inventory.csv`) so it can answer questions like *"Do you have wireless headphones?"*, *"What features does the smart watch have?"*, or *"Show me everything in stock."* — without hallucinating prices, features, or stock counts.
+This project deploys a complete retail AI assistant from scratch using Terraform. It includes:
+
+- A **static website** with a home page (product categories) and category pages (product details).
+- A **floating chatbot widget** on every page that lets customers ask questions about products.
+- A **Bedrock Agent** grounded in `product_inventory.csv` via a RAG knowledge base, so it answers questions about availability, pricing, and features without hallucinating.
 
 **How it works (end-to-end):**
 
-1. The CSV catalog is uploaded into an S3 bucket.
+1. The CSV catalog is uploaded to an S3 bucket.
 2. A Bedrock **Knowledge Base** (vector store in OpenSearch Serverless) ingests and indexes the catalog using the `amazon.titan-embed-text-v2` embedding model.
 3. A Bedrock **Agent** is created with a strict system prompt (`instructions.txt`) that forbids guessing and requires referencing the inventory file.
-4. The Agent is associated with the Knowledge Base, enabling it to perform RAG lookups on every user turn.
-5. End-users converse with the agent through the Bedrock runtime API; the agent retrieves relevant chunks from the vector store and answers using the foundation model.
+4. The Agent is associated with the Knowledge Base, enabling RAG lookups on every user turn.
+5. The static website is opened locally (e.g. via Live Server). The chatbot widget sends messages to an **API Gateway HTTP API**.
+6. API Gateway proxies requests to a **Lambda function** (`chat.py`) which calls the Bedrock Agent runtime and streams the response back to the browser.
 
 ---
 
@@ -29,8 +34,10 @@ This project deploys an AI shop-assistant chatbot from scratch using Terraform. 
 | **Embedding Model** | Amazon Titan Text Embeddings v2 (`amazon.titan-embed-text-v2:0`) |
 | **Vector Store** | Amazon OpenSearch Serverless (Vector Search collection) |
 | **Storage** | Amazon S3 (catalog source documents) |
+| **Chat API** | AWS Lambda (Python 3.12) + API Gateway HTTP API |
 | **AuthN/AuthZ** | IAM roles with least-privilege inline policies |
 | **Memory** | Bedrock Agent session-summary memory (30 days) |
+| **Frontend** | Vanilla HTML, CSS, JavaScript (static, no framework) |
 | **Providers** | `hashicorp/aws` 6.47.0, `hashicorp/time` ~0.11, `hashicorp/null` ~3.0 |
 
 ---
@@ -41,11 +48,18 @@ This project deploys an AI shop-assistant chatbot from scratch using Terraform. 
 Retail_AI_Assistant/
 ├── main.tf                          # Root module: wires every submodule together
 ├── provider.tf                      # AWS provider + required providers declaration
-├── variables.tf                     # Root input variables (names, model IDs)
+├── variables.tf                     # Root input variables
 ├── instructions.txt                 # System prompt that governs agent behavior
 ├── product_inventory.csv            # Source catalog ingested into the knowledge base
-├── terraform.tfstate                # Terraform state (local backend)
-├── terraform.tfstate.backup
+├── website/                         # Static frontend
+│   ├── index.html                   # Home page — product category cards
+│   ├── category.html                # Product listing page for a selected category
+│   ├── products.js                  # Shared product data (parsed from CSV)
+│   ├── chatbot.js                   # Chatbot widget — calls API Gateway
+│   ├── style.css                    # Shared styles
+│   ├── README.md                    # Website-specific deployment notes
+│   └── api/
+│       └── chat.py                  # Lambda handler — proxies to Bedrock Agent runtime
 └── modules/
     ├── bedrock_agent/               # Bedrock Agent + IAM role + permissions
     │   ├── main.tf
@@ -64,56 +78,76 @@ Retail_AI_Assistant/
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf               # → bucket_arn
-    └── s3_bucket_object/            # Uploads product_inventory.csv into the bucket
+    ├── s3_bucket_object/            # Uploads product_inventory.csv into the bucket
+    │   ├── main.tf
+    │   └── variables.tf
+    ├── aws_lambda_function/         # Lambda function (chat.py) + auto-zip via archive_file
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf               # → function_name, function_arn, invoke_arn
+    ├── aws_apigatewayv2_http_api/   # HTTP API + Lambda integration + POST & OPTIONS routes
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf               # → chat_url
+    ├── aws_iam_role/                # IAM execution role for Lambda
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── output.tf                # → lambda_role (ARN), lambda_role_name
+    ├── aws_iam_role_policy/         # Inline policy: bedrock:InvokeAgent
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    └── aws_iam_role_policy_attachment/    # Attaches AWSLambdaBasicExecutionRole
         ├── main.tf
-        └── variables.tf
+        ├── variables.tf
+        └── outputs.tf
 ```
 
 ---
 
 ## Prerequisites
 
-Before deploying, make sure you have:
-
-- **AWS Account** with permissions to create Bedrock Agents, Bedrock Knowledge Bases, OpenSearch Serverless collections, S3 buckets, and IAM roles.
-- **Model access enabled** in Amazon Bedrock for the following models in `us-east-1`:
-  - `amazon.nova-pro-v1:0` (foundation model)
-  - `amazon.titan-embed-text-v2:0` (embedding model)
-  > Enable them from the AWS Console → *Amazon Bedrock → Model access*.
-- **AWS CLI** configured locally (`aws configure`) with credentials that can call `bedrock-agent`, `s3`, `iam`, and `aoss`.
-- **awscurl** installed and available on `PATH` (used to pre-create the OpenSearch vector index).
+- **AWS Account** with permissions to create Bedrock Agents, Knowledge Bases, OpenSearch Serverless collections, S3 buckets, Lambda functions, API Gateway APIs, and IAM roles.
+- **Model access enabled** in Amazon Bedrock (`us-east-1`):
+  - `amazon.nova-pro-v1:0`
+  - `amazon.titan-embed-text-v2:0`
+  > Enable from AWS Console → *Amazon Bedrock → Model access*.
+- **AWS CLI** configured (`aws configure`) with credentials for `bedrock-agent`, `s3`, `iam`, `lambda`, `apigateway`, and `aoss`.
+- **awscurl** — used to pre-create the OpenSearch vector index:
   ```bash
   pip install awscurl
   ```
-- **Terraform** ≥ 1.5
+- **Terraform** ≥ 1.5:
   ```bash
   terraform -version
   ```
-- **Git** (optional, for cloning the repo).
 
 ---
 
 ## Configuration
 
-Default variables (defined in [`variables.tf`](variables.tf)):
+Variables defined in `variables.tf`:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `chatbot_name` | `chatbot-agent` | Base name used for the Bedrock agent and the S3 bucket |
+| `chatbot_name` | `chatbot-agent` | Base name for the Bedrock agent and S3 bucket |
 | `chatbot_foundation_model` | `amazon.nova-pro-v1:0` | Bedrock foundation model ID |
-| `knowledge_base_name` | `shop-inventory-kb` | Name of the Bedrock Knowledge Base and OpenSearch collection |
+| `knowledge_base_name` | `shop-inventory-kb` | Name of the Knowledge Base and OpenSearch collection |
 | `data_source_name` | `inventory-s3-data-source` | Name of the S3-backed data source |
+| `lambda_role` | `shopai-lambda-role` | IAM role name for the Lambda function |
+| `role_policy_name` | `bedrock-invoke` | Name of the inline policy granting `bedrock:InvokeAgent` |
+| `website_origin` | `http://127.0.0.1:5500` | Origin allowed by API Gateway CORS (match your Live Server port) |
+| `bedrock_agent_alias_id` | `TSTALIASID` | Bedrock Agent alias ID used by the Lambda |
+| `aws_region` | `us-east-1` | AWS region |
 
-Override any of them by creating a `terraform.tfvars` file:
+Override any variable by creating a `terraform.tfvars` file:
 
 ```hcl
-chatbot_name            = "my-shop-bot"
-chatbot_foundation_model = "amazon.nova-pro-v1:0"
-knowledge_base_name     = "shop-inventory-kb"
-data_source_name        = "inventory-s3-data-source"
+chatbot_name             = "my-shop-bot"
+knowledge_base_name      = "shop-inventory-kb"
+website_origin           = "http://127.0.0.1:5500"
+bedrock_agent_alias_id   = "TSTALIASID"
 ```
-
-The region is hard-coded to **`us-east-1`** in [`provider.tf`](provider.tf) — change it there if you need a different region (and ensure Bedrock model access is enabled there).
 
 ---
 
@@ -140,42 +174,71 @@ The region is hard-coded to **`us-east-1`** in [`provider.tf`](provider.tf) — 
    terraform apply
    ```
 
-   The apply creates resources in this order:
-   1. S3 bucket (`<chatbot_name>-files`) and uploads `product_inventory.csv`.
+   Resources are created in this order:
+   1. S3 bucket + `product_inventory.csv` upload.
    2. OpenSearch Serverless encryption, network, and data-access policies.
    3. OpenSearch Serverless vector collection + `bedrock-knowledge-base-default-index` (via `awscurl`).
-   4. Bedrock Knowledge Base (`<knowledge_base_name>`).
-   5. S3 data source + automatic ingestion job (sync).
-   6. Bedrock Agent (`<chatbot_name>`) with its IAM role.
+   4. Bedrock Knowledge Base.
+   5. S3 data source + automatic ingestion job.
+   6. Bedrock Agent + IAM role.
    7. Knowledge-base ↔ agent association.
+   8. Lambda IAM role + policy attachment + inline `bedrock:InvokeAgent` policy.
+   9. Lambda function (`shopai-chat`) — `chat.py` is auto-zipped by Terraform.
+   10. API Gateway HTTP API with `POST /chat` and `OPTIONS /chat` routes.
 
 5. **Inspect outputs**
    ```bash
    terraform output
    ```
-   You should see `agent_id`, `knowledge_base_id`, and `bucket_arn`.
+   You should see:
+   - `agent_id`
+   - `knowledge_base_id`
+   - `bucket_arn`
+   - `chat_api_url` — the full URL for the chatbot API (`https://<id>.execute-api.us-east-1.amazonaws.com/prod/chat`)
+   - `lambda_function_name`
 
-6. **Test the agent** using the AWS CLI or the Bedrock console:
-   ```bash
-   aws bedrock-agent-runtime invoke-agent \
-     --agent-id $(terraform output -raw agent_id) \
-     --agent-alias-id TSTALIASID \
-     --session-id "demo-$(date +%s)" \
-     --input-text "Do you have wireless headphones?" \
-     --region us-east-1
-   ```
-   > Replace `TSTALIASID` with a real agent alias once you create one (e.g., a `DRAFT` or versioned alias).
+6. **Open the website**
+
+   Open `website/index.html` with **Live Server** (VS Code extension) or any local HTTP server. The chatbot widget in the bottom-right corner will connect to the deployed API automatically.
+
+   > Make sure `website_origin` in `variables.tf` matches the origin your Live Server uses (default: `http://127.0.0.1:5500`). If it differs, update the variable and re-run `terraform apply`.
+
+---
+
+## Website
+
+The frontend is a pure HTML/CSS/JS static site — no build step required.
+
+| Page | File | Description |
+| --- | --- | --- |
+| Home | `index.html` | Displays all product categories as clickable cards |
+| Category | `category.html` | Lists all products in the selected category with price, availability badge, features, description, and stock count |
+
+The chatbot widget (`chatbot.js`) is included on every page. It:
+- Generates a random `session_id` per browser session so conversation memory is maintained.
+- Sends `POST` requests to the API Gateway endpoint.
+- Displays a greeting on first open and shows a "Thinking…" indicator while waiting for a response.
+
+---
+
+## Chatbot Backend
+
+```
+Browser → API Gateway (POST /chat) → Lambda (chat.py) → Bedrock Agent runtime → Nova Pro + Knowledge Base
+```
+
+- **CORS** is handled entirely by the Lambda (not API Gateway), returning `Access-Control-Allow-Origin: *` on every response including OPTIONS preflight requests.
+- The Lambda uses **payload format version 2.0**, reading the HTTP method from `event["requestContext"]["http"]["method"]`.
+- The Bedrock Agent streams its response in chunks; the Lambda concatenates them before returning.
 
 ---
 
 ## Updating the Catalog
 
-When the inventory changes:
-
 1. Edit `product_inventory.csv`.
-2. Re-upload it to S3:
+2. Re-upload to S3:
    ```bash
-   aws s3 cp product_inventory.csv s3://<chatbot_name>-files/product_inventory.csv
+   aws s3 cp product_inventory.csv s3://chatbot-agent-files/product_inventory.csv
    ```
 3. Trigger a fresh ingestion job:
    ```bash
@@ -184,29 +247,22 @@ When the inventory changes:
      --data-source-id <DATA_SOURCE_ID> \
      --region us-east-1
    ```
+4. Also update the `products` array in `website/products.js` so the website reflects the new catalog.
 
 ---
 
 ## Customizing the Agent
 
-- **Behavior / persona:** edit [`instructions.txt`](instructions.txt). The current prompt enforces:
-  - Greeting-only responses for plain "hi / hello".
-  - Mandatory lookup against the inventory file.
-  - No hallucinated prices, features, or stock counts.
-- **Memory:** session-summary memory is enabled with a 30-day retention (see `memory_configuration` in the Bedrock Agent module).
-- **Foundation model:** swap `chatbot_foundation_model` in `terraform.tfvars`.
+- **Behavior / persona:** edit `instructions.txt`.
+- **Foundation model:** change `chatbot_foundation_model` in `terraform.tfvars`.
+- **Memory:** session-summary memory with 30-day retention is configured in the `bedrock_agent` module.
 
 ---
 
 ## Cleanup
 
-To tear down all resources created by this project:
-
 ```bash
 terraform destroy -auto-approve
 ```
 
-> OpenSearch Serverless collections take a few minutes to delete. The destroy step will wait for them.
-
----
-
+> OpenSearch Serverless collections take a few minutes to delete.
