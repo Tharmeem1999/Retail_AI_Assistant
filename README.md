@@ -221,6 +221,14 @@ The chatbot widget (`chatbot.js`) is included on every page. It:
 
 ---
 
+## Screenshots
+
+<img width="1916" height="961" alt="Image" src="https://github.com/user-attachments/assets/b376aca2-7710-46fd-9d72-5c6790ccdc98" />
+<img width="1916" height="961" alt="Image" src="https://github.com/user-attachments/assets/0e41f7b7-ed02-414c-8730-494bc8f6dd7e" />
+<img width="1916" height="961" alt="Image" src="https://github.com/user-attachments/assets/74c5d030-d8a1-45c4-a21a-205084188408" />
+<img width="1916" height="961" alt="Image" src="https://github.com/user-attachments/assets/edbe3715-81c5-4150-8570-bf9d5e2cf989" />
+---
+
 ## Chatbot Backend
 
 ```
